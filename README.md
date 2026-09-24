@@ -46,4 +46,8 @@ for pricing rules, example facts, and legacy profile recovery limits.
 
 Direct OpenAI generation is implemented behind the existing callable contract.
 See [OpenAI adapter setup and one-job live smoke test](outreach_recovery/OPENAI_ADAPTER.md).
-Live provider validation remains pending until a locally configured API key is available.
+The user completed a live gpt-4o-mini synthetic smoke test successfully on 2026-09-24.
+
+The [local human-review interface](outreach_recovery/HUMAN_REVIEW.md) supports
+version-checked approval, rejection, and an immutable decision audit. Migration
+005 is required. Gmail delivery and HubSpot synchronization are still pending.
