@@ -1,5 +1,10 @@
 # Cavaco Outreach: durable delivery milestone
 
+Update: the Gmail REST adapter now exists and is tested offline. See
+[GMAIL_ADAPTER.md](GMAIL_ADAPTER.md) for current scope. The milestone description
+below records the original provider-neutral foundation; OAuth onboarding and live
+verification remain pending.
+
 Implemented: provider contracts, PostgreSQL outbox/repository, a bounded worker invocation,
 and fake-provider acceptance tests against PostgreSQL. No live Gmail/HubSpot calls,
 credentials, OAuth setup, provider reconciliation search, or background daemon are included.

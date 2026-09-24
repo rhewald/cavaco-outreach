@@ -4,7 +4,7 @@ Supervised sales outreach with HubSpot as the business source of truth, Gmail fo
 
 ## Current status
 
-This repository contains PostgreSQL inbound ingestion, leased draft generation, seller-profile validation, a live-tested direct OpenAI adapter, the Cavaco Outreach review interface, and a durable delivery outbox with provider contracts and crash-recovery tests. It is not a deployed service. Live Gmail, HubSpot, OpenSales, and SalesGPT adapters remain to be connected. The SQL and integration tests run against disposable PostgreSQL 16.2.
+This repository contains PostgreSQL inbound ingestion, leased draft generation, seller-profile validation, a live-tested direct OpenAI adapter, the Cavaco Outreach review interface, and a durable delivery outbox with provider contracts and crash-recovery tests. It is not a deployed service. The Gmail REST adapter is implemented and tested offline; OAuth onboarding and live verification remain pending. HubSpot, OpenSales, and SalesGPT adapters remain to be connected. The SQL and integration tests run against disposable PostgreSQL 16.2.
 
 The [delivery milestone guide](outreach_recovery/DELIVERY.md) documents approval-bound send intents, independent CRM operations, reconciliation, and remaining live integration work.
 
@@ -53,3 +53,7 @@ The user completed a live gpt-4o-mini synthetic smoke test successfully on 2026-
 The [local human-review interface](outreach_recovery/HUMAN_REVIEW.md) supports
 version-checked approval, rejection, and an immutable decision audit. Migration
 005 is required. Gmail delivery and HubSpot synchronization are still pending.
+
+## Gmail adapter
+
+See [Gmail adapter scope and setup](outreach_recovery/GMAIL_ADAPTER.md). No live mailbox or send is enabled by installing this code.
