@@ -4,7 +4,7 @@ Supervised sales outreach with HubSpot as the business source of truth, Gmail fo
 
 ## Current status
 
-This repository contains the worker policy, 11 simulated crash-recovery tests, and a standalone PostgreSQL inbound transaction prototype. It is not a deployed service. Gmail, HubSpot, OpenSales, and SalesGPT integrations remain to be implemented. The SQL checks have not yet been executed against PostgreSQL.
+This repository contains the worker policy, 11 simulated crash-recovery tests, and PostgreSQL inbound transactions with concurrency and rollback integration tests. It is not a deployed service. Gmail, HubSpot, OpenSales, and SalesGPT integrations remain to be implemented. The SQL and integration tests have been exercised against a disposable PostgreSQL 16.2 instance.
 
 ## Run the tests
 
@@ -13,6 +13,8 @@ Requires Python 3.9 or newer; no external packages or credentials are needed.
 ```sh
 python3 -m unittest discover -s outreach_recovery -p 'test_*.py' -v
 ```
+
+For database tests and parameter mapping, see the [inbound transaction guide](outreach_recovery/INBOUND_TRANSACTIONS.md).
 
 ## Project files
 

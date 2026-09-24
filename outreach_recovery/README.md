@@ -33,8 +33,7 @@ provider-enforced idempotency.
 - Implement HubSpot logging/reconciliation independently; these tests only verify
   creation of a unique logging intent, not delivery to HubSpot.
 - A standalone inbound migration and transaction blocks are now provided in
-  [INBOUND_TRANSACTIONS.md](INBOUND_TRANSACTIONS.md). They still need PostgreSQL
-  execution checks and service integration. Review workflow and SalesGPT
+  [INBOUND_TRANSACTIONS.md](INBOUND_TRANSACTIONS.md). They have PostgreSQL 16.2 concurrency/rollback checks and still need service integration. Review workflow and SalesGPT
   integration remain outstanding. No live service is wired to this module.
 - The begin-dispatch transaction is the authorization boundary. Changes after
   that commit cannot recall an already in-flight provider request.

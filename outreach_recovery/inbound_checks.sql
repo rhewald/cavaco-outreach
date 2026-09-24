@@ -59,7 +59,9 @@ BEGIN
         mailbox, 'conflict', 'thread-1', NULL, ARRAY['<other@test>'], 'Ambiguous', now());
     ASSERT result.outcome = 'ambiguous';
     ASSERT (SELECT version_counter = 2 FROM outreach_pilot.conversations WHERE id = convo);
-    ASSERT (SELECT count(*) = 3 FROM outreach_pilot.reply_jobs);
+    ASSERT (SELECT count(*) = 3 FROM outreach_pilot.reply_jobs j
+            JOIN outreach_pilot.conversations c ON c.id = j.conversation_id
+            WHERE c.mailbox_id = mailbox);
 END;
 $$;
 ROLLBACK;

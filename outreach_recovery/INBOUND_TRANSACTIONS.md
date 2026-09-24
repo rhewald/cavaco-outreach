@@ -10,7 +10,9 @@ unchanged while evaluating it in a disposable database.
 Execute this parameterized block through the PostgreSQL driver:
 
 ```sql
-BEGIN;
+BEGIN ISOLATION LEVEL READ COMMITTED;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '15s';
 SELECT * FROM outreach_pilot.ingest_reply(
     %(mailbox_id)s::uuid,
     %(gmail_message_id)s,
@@ -30,18 +32,48 @@ Only call this for actual prospect replies after filtering sent mail, drafts,
 bounces, and automatic messages. Gmail Pub/Sub carries a mailbox history cursor;
 fetch the Gmail message before invoking this function.
 
-The transaction serializes writers per mailbox, stores a durable receipt,
-matches the conversation within that mailbox, increments the version once,
+The transaction locks the receipt for one Gmail message, stores its durable input,
+tries outbound MIME header matching first and Gmail thread matching second,
+locks the selected conversation, increments its version once,
 inserts the message, supersedes stale work, and queues generation. Duplicate
 Gmail message IDs return the original version without incrementing or queuing.
 Ambiguous or unmatched messages remain stored without changing any conversation.
 Retry unmatched receipts after outbound reconciliation; ambiguous receipts require
 review of conflicting associations. No Gmail or HubSpot request runs inside SQL.
 
-This lock scope is deliberately conservative for the single-lead pilot. All
-future writers must acquire locks in this order: mailbox, conversation, then
-messages/jobs/drafts/outbox. Direct table writes bypass this application contract;
-restrict production roles to vetted functions when the service is implemented.
+Unrelated conversations in the same mailbox can proceed concurrently. Ingestion
+locks receipt -> conversation -> jobs/drafts. Draft publication locks conversation
+before re-reading the job. Other writers must follow that order and never acquire
+an inbound receipt lock while holding a conversation lock. Process one reply per
+transaction; retry the entire transaction on deadlock, serialization failure, or
+lock timeout with bounded backoff. Stored conversation identity/header mappings
+must not be reassigned concurrently with ingestion.
+
+The PostgreSQL function contains no COMMIT. Its caller owns the BEGIN/COMMIT
+boundary; exceptions roll back the receipt, message, version and job together.
+A content hash is not a substitute for `(mailbox_id, gmail_message_id)` identity:
+two distinct messages may contain identical text. Gmail history entries must be
+expanded into individual fetched messages before invoking the function.
+
+Direct table writes bypass this application contract; restrict production roles
+to vetted functions when the service is implemented. This is not the completed
+production repository or a guarantee of perfect concurrency under arbitrary writers.
+
+### Caller parameters
+
+| Parameter | Source |
+| --- | --- |
+| mailbox_id | Internal UUID mapped to the authenticated Gmail account |
+| gmail_message_id | Fetched Gmail message `id`, not Pub/Sub messageId/historyId |
+| gmail_thread_id | Fetched Gmail message `threadId`, or NULL if unavailable |
+| mime_message_id | Parsed RFC Message-ID, nullable |
+| reply_ids | Parsed IDs from In-Reply-To and References, as a text array |
+| body_text | Decoded reply text; filter auto-replies before this call |
+| received_at | Gmail internalDate converted from epoch milliseconds to UTC |
+
+The first stored receipt is retained across retries. A duplicate returns the
+original message UUID and version. Unmatched/ambiguous outcomes return NULL IDs
+and do not enqueue a draft job. Late matching can be retried using the same inputs.
 
 ## Publish a generated reply draft
 
@@ -72,14 +104,33 @@ The check script rolls back its fixtures and exercises duplicate ingestion,
 missing inbound Message-ID, version increments, stale approval/generation,
 duplicate draft results, early replies, and conflicting thread evidence.
 
-PostgreSQL tooling was not available when these files were written, so these SQL
-checks have not been executed. Real concurrent-session and rollback tests remain
-required before deployment. The existing Python simulation is not SQL validation.
+Validated on PostgreSQL 16.2 with independent database connections, including
+12 concurrent duplicate deliveries, 12 distinct simultaneous replies, mailbox
+isolation, header/thread resolution, enqueue-failure rollback, lock timeout/retry,
+unrelated conversation progress, and stale draft regression cases.
+
+For an already initialized pilot schema, apply `002_ingestion_concurrency.sql`
+instead of re-running `inbound.sql`. The upgrade replaces both functions without
+recreating tables. Fresh databases only require `inbound.sql`.
+
+To repeat the full disposable-database suite (Python 3.9–3.12 on a platform with
+a pgserver wheel):
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install pgserver==0.1.4 psycopg2-binary==2.9.12
+.venv/bin/python -m outreach_recovery.run_postgres_tests
+```
+
+Alternatively install psycopg2-binary and set OUTREACH_TEST_DATABASE_URL to an
+explicitly disposable database with inbound.sql applied, then run unittest
+discovery. The test suite inserts fixtures and temporarily adds a failure trigger;
+never point it at a production database. Integration tests skip without that URL.
 
 ## Integration work outside this transaction
 
 - Register the pilot conversation and confirmed outbound message before normal
-  reply handling; increment outbound versions through the same lock discipline.
+  reply handling; increment outbound versions through the same conversation-first lock discipline (no receipt lock needed).
 - Store enrichment in prospect/research records, not in the email message ledger.
 - Synchronize HubSpot using durable outbox intents, rather than simultaneous
   uncoordinated database/API writes.
