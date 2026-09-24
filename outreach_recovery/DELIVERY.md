@@ -100,3 +100,19 @@ Next: implement the authenticated Gmail adapter, verify its reconciliation again
 a controlled mailbox, then implement HubSpot creation/correlation and run a supervised
 single-lead pilot. A polling service, operational dashboard for unresolved work,
 mailbox eligibility/suppression checks, and live notification ingestion are still needed.
+
+## Controlled initial Gmail delivery
+
+Apply `007_initial_outreach.sql` after 006 to allow a manually reviewed initial
+email without a fabricated inbound message. The draft still references a real
+conversation, snapshots its version, and follows the same approval/outbox locks.
+For an explicitly Gmail-only test, pass `gmail_only=True` and both HubSpot IDs as
+`None` to `prepare`. Normal delivery still requires explicit CRM identifiers.
+Gmail-only completion records the sent message but does not enqueue CRM logging.
+
+On 2026-09-24, the user-authorized test from sdr@cavaco.ai to rui@cavaco.ai
+was accepted by Gmail through DeliveryWorker and committed as completed. This is
+provider acceptance, not proof of recipient inbox placement. Local pilot records
+are retained in ~/.local/share/cavaco-outreach/controlled-pilot/postgres.
+The first post-send reconciliation search returned not_found_yet; this does not
+permit a resend. Automated inbound notification processing remains unconnected.

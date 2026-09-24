@@ -238,3 +238,23 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(self.sql('SELECT version_counter FROM outreach_pilot.conversations WHERE id=%s',(self.conversation,))[0][0],3)
         self.assertEqual(self.sql('SELECT reason FROM outreach_pilot.delivery_followups WHERE operation_id=%s',(self.operation,))[0][0],'conversation_changed_during_send')
         self.assertEqual(self.sql('SELECT state FROM outreach_pilot.drafts WHERE id=%s',(self.draft,))[0][0],'sent')
+
+    def test_initial_gmail_only_send_has_no_fake_inbound_or_crm(self):
+        conv=self.sql("INSERT INTO outreach_pilot.conversations(mailbox_id) VALUES(%s) RETURNING id",(self.mailbox,))[0][0]
+        draft=self.sql("INSERT INTO outreach_pilot.drafts(conversation_id,version_snapshot,body) VALUES(%s,0,'Initial controlled test') RETURNING id",(conv,))[0][0]
+        env=self.delivery.prepare(draft,recipient='owner@example.test',subject='Test',hubspot_portal_id=None,hubspot_contact_id=None,gmail_only=True)
+        self.assertEqual(self.reviews.decide(draft,'approved','Rui',envelope_id=env),'approved')
+        op=self.sql("SELECT id FROM outreach_pilot.delivery_operations WHERE draft_id=%s",(draft,))[0][0]
+        # The fake normally returns the fixture thread; use a unique new-thread result.
+        class InitialProvider:
+            def send(inner,payload,**kwargs):
+                return MutationResult(MutationState.ACCEPTED,'initial-provider-id','initial-thread')
+        worker=DeliveryWorker(self.delivery,gmail=InitialProvider(),hubspot=None)
+        self.assertEqual(worker.run_once('gmail_send',op),'completed')
+        self.assertEqual(worker.run_once('gmail_send',op),'idle')
+        self.assertEqual(self.sql("SELECT direction FROM outreach_pilot.messages WHERE conversation_id=%s",(conv,)),[('outbound',)])
+        self.assertEqual(self.sql("SELECT kind FROM outreach_pilot.delivery_operations WHERE draft_id=%s",(draft,)),[('gmail_send',)])
+
+    def test_missing_crm_ids_require_explicit_gmail_only(self):
+        with self.assertRaises(ValueError):
+            self.delivery.prepare(self.draft,recipient='owner@example.test',subject='Test',hubspot_portal_id=None,hubspot_contact_id=None)

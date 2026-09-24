@@ -11,13 +11,15 @@ from outreach_recovery.generation import GenerationRepository
 
 class DeliveryRepository(GenerationRepository):
     def prepare(self, draft_id, *, recipient, subject, hubspot_portal_id, hubspot_contact_id,
-                in_reply_to=None, references=()):
+                in_reply_to=None, references=(), gmail_only=False):
         # Pilot supports one plain recipient, no cc/bcc/display names/header injection.
         if not isinstance(recipient, str) or not re.fullmatch(r'[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+', recipient):
             raise ValueError('One plain recipient email is required')
         if not isinstance(subject, str) or not subject.strip() or len(subject)>998 or any(c in subject for c in '\r\n'):
             raise ValueError('A single-line subject is required')
-        for value in (hubspot_portal_id, hubspot_contact_id):
+        if gmail_only and (hubspot_portal_id is not None or hubspot_contact_id is not None):
+            raise ValueError("Gmail-only delivery cannot specify CRM IDs")
+        for value in (() if gmail_only else (hubspot_portal_id, hubspot_contact_id)):
             if not isinstance(value,str) or not re.fullmatch(r'[0-9]+',value):
                 raise ValueError('Explicit HubSpot portal and contact IDs are required')
         ids=tuple(references) + ((in_reply_to,) if in_reply_to else ())
@@ -197,10 +199,11 @@ class DeliveryRepository(GenerationRepository):
                 cur.execute("UPDATE outreach_pilot.drafts SET state='sent' WHERE id=%s",(op['draft_id'],))
                 if thread_id:
                     cur.execute('UPDATE outreach_pilot.conversations SET gmail_thread_id=coalesce(gmail_thread_id,%s) WHERE id=%s',(thread_id,op['conversation_id']))
-                crm=dict(p, gmail_message_id=provider_id,gmail_thread_id=thread_id or p.get('thread_id'))
-                cur.execute("""INSERT INTO outreach_pilot.delivery_operations(draft_id,envelope_id,conversation_id,mailbox_id,conversation_version,kind,depends_on,payload)
-                    VALUES(%s,%s,%s,%s,%s,'hubspot_log',%s,%s) ON CONFLICT(draft_id,kind) DO NOTHING""",
-                    (op['draft_id'],op['envelope_id'],op['conversation_id'],op['mailbox_id'],op['conversation_version'],op['id'],Json(crm)))
+                if p.get('hubspot_portal_id') and p.get('hubspot_contact_id'):
+                    crm=dict(p, gmail_message_id=provider_id,gmail_thread_id=thread_id or p.get('thread_id'))
+                    cur.execute("""INSERT INTO outreach_pilot.delivery_operations(draft_id,envelope_id,conversation_id,mailbox_id,conversation_version,kind,depends_on,payload)
+                        VALUES(%s,%s,%s,%s,%s,'hubspot_log',%s,%s) ON CONFLICT(draft_id,kind) DO NOTHING""",
+                        (op['draft_id'],op['envelope_id'],op['conversation_id'],op['mailbox_id'],op['conversation_version'],op['id'],Json(crm)))
             cur.execute("""UPDATE outreach_pilot.delivery_operations SET state='completed',provider_id=%s,provider_thread_id=%s,
                 completed_at=clock_timestamp(),lease_token=NULL,lease_until=NULL WHERE id=%s""",(provider_id,thread_id,op['id']))
             self._event(cur,op,'found' if claim['recovery'] else 'accepted')

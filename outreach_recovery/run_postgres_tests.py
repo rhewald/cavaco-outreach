@@ -29,6 +29,7 @@ def main():
             cur.execute((root / "004_seller_validation.sql").read_text())
             cur.execute((root / "005_human_review.sql").read_text())
             cur.execute((root / "006_delivery_outbox.sql").read_text())
+            cur.execute((root / "007_initial_outreach.sql").read_text())
     finally:
         conn.close()
     os.environ["OUTREACH_TEST_DATABASE_URL"] = uri
