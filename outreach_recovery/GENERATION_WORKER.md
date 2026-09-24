@@ -134,3 +134,51 @@ application-role security model. External model quality, live SalesGPT dependenc
 compatibility, approval UI, observability alerts, CRM sync, and Gmail delivery
 remain separate integration work. This worker is not deployed as a background
 service by installing these files.
+
+## Seller profile validation (migration 004)
+
+Apply `004_seller_validation.sql` after 003, with generation workers stopped.
+New profile inserts and context associations are validated in PostgreSQL, including
+writes made outside Python. `GenerationRepository.create_seller_profile(facts,
+approved_by)` returns the profile UUID or raises `InvalidContext` with a field-level
+error. Failed writes roll back. No values from rejected facts are echoed in errors.
+
+See `seller_profile.example.json` for the version 1 shape. It contains test-only
+placeholder facts; replace and review them before use. Required nonblank strings:
+`company_name`, `seller_name`, `product_description`, `conversation_purpose`, and
+`meeting_policy`. Each allows at most 5,000 characters. `allowed_claims` is an
+array of up to 100 nonblank strings (5,000 characters each); an empty array means
+no additional approved claims. Unknown keys and unsupported schema versions fail.
+
+Pricing is explicit:
+
+- `{"mode":"undisclosed"}`: no price is approved for disclosure.
+- `{"mode":"custom"}`: custom quotation; no numeric price is approved.
+- `{"mode":"fixed","plans":[{"name":"Example","currency":"EUR",
+  "amount_minor":15000,"billing_interval":"month"}]}`: a declared plan.
+
+Fixed pricing requires 1..100 plans with unique names (case-insensitive after
+space trimming), amounts from 0 to 100000000000 in whole minor units, and
+`one_time`, `month`, or `year` billing. The pilot currency allowlist is USD/EUR/GBP,
+all with 100 minor units per major unit: 15000 EUR minor units means EUR 150.
+Other currencies or pricing models require an explicit schema extension.
+
+Existing append-only profiles are preserved, not silently rewritten. Audit them:
+
+```sql
+SELECT id, outreach_pilot.seller_facts_error(facts) AS error
+FROM outreach_pilot.seller_profiles
+WHERE outreach_pilot.seller_facts_error(facts) IS NOT NULL;
+```
+
+Create reviewed replacement profiles and append new conversation contexts. New
+context associations cannot point at invalid legacy profiles. Claiming a job
+validates its pinned facts, including snapshots from before migration 004;
+invalid facts route to dead-letter with a specific error before a model call.
+An already-pinned invalid snapshot cannot be rewritten or repaired by a retry;
+resolve it through an explicit reviewed replacement-job workflow (not supplied).
+Existing inbound ingestion still records and queues replies even if configuration
+is absent; the claim boundary stops generation. This avoids losing incoming mail.
+
+Validation enforces structure, not factual truth or authorization. `approved_by`
+remains an audit attribution, and human review of business claims is still needed.

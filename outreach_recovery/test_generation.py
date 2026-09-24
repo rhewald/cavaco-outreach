@@ -83,7 +83,10 @@ class GenerationDatabaseTests(unittest.TestCase):
                  (self.mailbox, self.mailbox+"@test.example"), False)
         self.sql("INSERT INTO outreach_pilot.conversations(id,mailbox_id,gmail_thread_id) VALUES (%s,%s,'generation')",
                  (self.conversation, self.mailbox), False)
-        self.seller = self.sql("INSERT INTO outreach_pilot.seller_profiles(facts,approved_by) VALUES ('{\"company\":\"Cavaco\",\"policy\":\"Do not invent prices\"}', 'test-reviewer') RETURNING id")[0][0]
+        from pathlib import Path
+        import json
+        facts = json.loads(Path(__file__).with_name("seller_profile.example.json").read_text())
+        self.seller = GenerationRepository(DSN).create_seller_profile(facts, "test-reviewer")
         self.sql("INSERT INTO outreach_pilot.conversation_contexts(conversation_id,seller_profile_id,prospect_research) VALUES (%s,%s,'Untrusted research')",
                  (self.conversation, self.seller), False)
         self.message = self.ingest("first")[1]

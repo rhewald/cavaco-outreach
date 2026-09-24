@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "company_name": "Example Seller",
+  "seller_name": "Test Seller",
+  "product_description": "Example product for tests only",
+  "conversation_purpose": "Answer questions for review",
+  "meeting_policy": "Offer a meeting; do not claim it is booked",
+  "allowed_claims": [],
+  "pricing": {
+    "mode": "undisclosed"
+  }
+}

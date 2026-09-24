@@ -1,4 +1,4 @@
--- Run after inbound.sql and 003_draft_generation.sql in a disposable database. All fixtures roll back.
+-- Run after migrations through 004_seller_validation.sql in a disposable database. All fixtures roll back.
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$
@@ -29,7 +29,7 @@ BEGIN
     ASSERT (SELECT body_text = 'Interested' FROM outreach_pilot.messages
             WHERE id = result.message_id);
     INSERT INTO outreach_pilot.seller_profiles(facts,approved_by)
-    VALUES ('{"company":"Cavaco"}', 'test-reviewer') RETURNING id INTO seller;
+    VALUES ('{"schema_version": 1, "company_name": "Example Seller", "seller_name": "Test Seller", "product_description": "Example product for tests only", "conversation_purpose": "Answer questions for review", "meeting_policy": "Offer a meeting; do not claim it is booked", "allowed_claims": [], "pricing": {"mode": "undisclosed"}}', 'test-reviewer') RETURNING id INTO seller;
     INSERT INTO outreach_pilot.conversation_contexts(conversation_id,seller_profile_id)
     VALUES (convo,seller);
     SELECT lease_token INTO lease FROM outreach_pilot.claim_reply_job(120,first_job);

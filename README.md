@@ -38,3 +38,8 @@ Before live operation, implement the PostgreSQL repository, Gmail and HubSpot ad
 ## Origin
 
 Extracted from the local Cavaco AI MCP workspace on September 24, 2026. This repository owns the outreach code going forward.
+
+Seller profiles now have versioned database validation; apply migration
+`outreach_recovery/004_seller_validation.sql` after 003. See
+[outreach_recovery/GENERATION_WORKER.md](outreach_recovery/GENERATION_WORKER.md)
+for pricing rules, example facts, and legacy profile recovery limits.

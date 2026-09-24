@@ -68,6 +68,18 @@ class GenerationRepository:
         finally:
             conn.close()
 
+    def create_seller_profile(self, facts, approved_by):
+        """Insert an approved revision; SQL is the single validation authority."""
+        import psycopg2
+        from psycopg2.extras import Json
+        try:
+            with self.connection() as conn, conn.cursor() as cur:
+                cur.execute("INSERT INTO outreach_pilot.seller_profiles(facts,approved_by) "
+                            "VALUES (%s,%s) RETURNING id", (Json(facts), approved_by))
+                return cur.fetchone()[0]
+        except psycopg2.errors.CheckViolation as exc:
+            raise InvalidContext(exc.diag.message_primary) from None
+
     def claim(self, lease_seconds=120, job_id=None):
         from psycopg2.extras import RealDictCursor
         with self.connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
