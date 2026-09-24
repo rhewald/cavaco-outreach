@@ -60,13 +60,13 @@ def create_app(repository,reviewer,port=8765,demo=False):
         return Response((ROOT/'review_templates/cavaco-logo.avif').read_bytes(),media_type='image/avif')
 
     @app.get('/reviews')
-    def reviews(offset:int=0,q:str='',kind:str='',mailbox:str='',sort:str='oldest'):
-        if offset<0 or offset>1000000 or len(q)>200 or len(mailbox)>320:
+    def reviews(offset:int=0,q:str='',kind:str='',mailbox:str='',sort:str='oldest',company:str=''):
+        if offset<0 or offset>1000000 or len(q)>200 or len(mailbox)>320 or len(company)>500 or (company and company!='missing:' and not company.startswith('name:')):
             raise HTTPException(400,'Invalid queue filter')
         if sort not in ('oldest','newest','prospect','company') or kind not in ('','initial','reply','followup'):
             raise HTTPException(400,'Invalid queue filter')
-        data=repository.queue(offset,q,kind,mailbox,sort)
-        filters=dict(q=q,kind=kind,mailbox=mailbox,sort=sort)
+        data=repository.queue(offset,q,kind,mailbox,sort,company)
+        filters=dict(q=q,kind=kind,mailbox=mailbox,sort=sort,company=company)
         return page('list.html',**data,**filters,offset=offset,
                     previous='/reviews?'+urlencode(dict(filters,offset=max(0,offset-50))),
                     next_page='/reviews?'+urlencode(dict(filters,offset=offset+50)))

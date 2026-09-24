@@ -6,10 +6,10 @@ from outreach_recovery.generation import GenerationRepository
 
 
 class ReviewRepository(GenerationRepository):
-    def pending(self, offset=0, q='', kind='', mailbox='', sort='oldest'):
-        return self.queue(offset,q,kind,mailbox,sort)['drafts']
+    def pending(self, offset=0, q='', kind='', mailbox='', sort='oldest', company=''):
+        return self.queue(offset,q,kind,mailbox,sort,company)['drafts']
 
-    def queue(self, offset=0, q='', kind='', mailbox='', sort='oldest'):
+    def queue(self, offset=0, q='', kind='', mailbox='', sort='oldest', company=''):
         orders={'oldest':'activity_at ASC NULLS LAST,id', 'newest':'activity_at DESC NULLS LAST,id',
                 'prospect':'lower(display_name),lower(recipient),id', 'company':'lower(company_name),lower(recipient),id'}
         if sort not in orders or kind not in ('','initial','reply','followup'):
@@ -41,8 +41,10 @@ class ReviewRepository(GenerationRepository):
                 CROSS JOIN LATERAL (SELECT count(*) AS message_count FROM outreach_pilot.messages msg WHERE msg.conversation_id=c.id AND msg.conversation_version<=d.version_snapshot) hist
                 WHERE d.state='pending_review'
             ) """
-            where=" WHERE (%s='' OR strpos(lower(display_name||' '||company_name||' '||recipient||' '||subject),lower(%s))>0) AND (%s='' OR kind=%s) AND (%s='' OR mailbox=%s)"
-            params=(q,q,kind,kind,mailbox,mailbox)
+            cur.execute(base+"SELECT DISTINCT company_name FROM queue WHERE company_name<>'' ORDER BY company_name")
+            companies=[row['company_name'] for row in cur.fetchall()]
+            where=" WHERE (%s='' OR strpos(lower(display_name||' '||company_name||' '||recipient||' '||subject),lower(%s))>0) AND (%s='' OR kind=%s) AND (%s='' OR mailbox=%s) AND (%s='' OR (%s='missing:' AND company_name='') OR company_name=%s)"
+            params=(q,q,kind,kind,mailbox,mailbox,company,company,company[5:] if company.startswith('name:') else None)
             cur.execute(base+'SELECT count(*) AS total FROM queue'+where,params)
             total=cur.fetchone()['total']
             cur.execute(base+'SELECT * FROM queue'+where+' ORDER BY '+orders[sort]+' LIMIT 50 OFFSET %s',params+(offset,))
@@ -50,7 +52,7 @@ class ReviewRepository(GenerationRepository):
             for draft in drafts:
                 decorate(draft)
                 if draft['activity_at']: draft['activity_at']=draft['activity_at'].astimezone(timezone.utc)
-            return dict(drafts=drafts,total=total,mailboxes=mailboxes)
+            return dict(drafts=drafts,total=total,mailboxes=mailboxes,companies=companies)
 
     def detail(self,draft_id):
         with self.connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:

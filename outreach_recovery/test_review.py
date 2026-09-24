@@ -174,3 +174,17 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(self.client.get('/reviews?kind=invalid').status_code,400)
         self.assertEqual(self.reviews.queue(q='no-such-prospect-928736')['total'],0)
         self.assertEqual(self.state(),'pending_review')
+
+    def test_company_filter_and_date_order(self):
+        self.sql("INSERT INTO outreach_pilot.review_contacts(conversation_id,display_name,company_name,source) VALUES(%s,'Person','Filter Co','test')",(self.conversation,),False)
+        rows=self.reviews.queue(company='name:Filter Co')['drafts']
+        self.assertIn(str(self.draft),[str(d['id']) for d in rows])
+        self.assertNotIn(str(self.draft),[str(d['id']) for d in self.reviews.queue(company='missing:')['drafts']])
+        self.assertEqual(self.reviews.queue(company='name:Missing Co 937')['total'],0)
+        for sort,reverse in [('oldest',False),('newest',True)]:
+            dates=[d['activity_at'] for d in self.reviews.queue(sort=sort)['drafts'] if d['activity_at']]
+            self.assertEqual(dates,sorted(dates,reverse=reverse))
+        page=self.client.get('/reviews?company=name%3AFilter+Co&sort=newest')
+        self.assertEqual(page.status_code,200)
+        self.assertIn('value="name:Filter Co" selected',page.text)
+        self.assertIn('Date · newest first',page.text)
