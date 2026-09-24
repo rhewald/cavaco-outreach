@@ -32,6 +32,22 @@ class CRMRepository(GenerationRepository):
                 raise ValueError("An immutable intent already exists with different content")
             return job
 
+    def enable_reply_logging(self, completed_job_id):
+        """Enroll the conversation using a verified, already-approved CRM activity."""
+        from outreach_recovery.crm_handoff import register_route
+        with self.connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""SELECT j.*,m.conversation_id FROM outreach_pilot.crm_activity_jobs j
+                JOIN outreach_pilot.messages m ON m.id=j.message_id WHERE j.id=%s AND j.state='completed'""",
+                (completed_job_id,))
+            job=cur.fetchone()
+            if not job:
+                raise ValueError("Completed approved activity required")
+            p=job['payload'];outgoing=p['direction']=='outbound'
+            register_route(cur,job['conversation_id'],portal_id=job['portal_id'],contact_id=job['contact_id'],
+                contact_email=p['to'] if outgoing else p['from'],mailbox_email=p['from'] if outgoing else p['to'],
+                reviewer=job['approved_by'],approval_reference='crm_activity:'+str(job['id']))
+            return str(job['conversation_id'])
+
     def approve(self, job_id, *, reviewer, digest):
         if not reviewer.strip():
             raise ValueError("Reviewer required")
@@ -49,15 +65,15 @@ class CRMRepository(GenerationRepository):
     def _event(self, cur, job, event):
         cur.execute("INSERT INTO outreach_pilot.crm_activity_events(job_id,event,lease_token) VALUES(%s,%s,%s)", (job["id"],event,job.get("lease_token")))
 
-    def claim(self, *, kind, operation_id=None, lease_seconds=120):
+    def claim(self, *, kind, operation_id=None, lease_seconds=120, portal_id=None):
         if kind != "hubspot_log" or not 10 <= lease_seconds <= 3600:
             raise ValueError("Invalid CRM claim")
         with self.connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""SELECT * FROM outreach_pilot.crm_activity_jobs WHERE
-                 (%s::uuid IS NULL OR id=%s::uuid) AND
+                 (%s::uuid IS NULL OR id=%s::uuid) AND (%s::text IS NULL OR portal_id=%s) AND
                  ((state IN ('pending','reconciliation_required') AND next_attempt_at<=clock_timestamp())
                   OR (state='processing' AND lease_until<=clock_timestamp()))
-                 ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED""", (operation_id,operation_id))
+                 ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED""", (operation_id,operation_id,portal_id,portal_id))
             job = cur.fetchone()
             if not job:
                 return None

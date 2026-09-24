@@ -38,6 +38,11 @@ class DeliveryRepository(GenerationRepository):
                 raise ValueError('A current unreviewed draft is required')
             if conversation['gmail_thread_id'] and not in_reply_to:
                 raise ValueError('An existing Gmail thread requires reply headers')
+            if not gmail_only:
+                cur.execute('SELECT portal_id,contact_id,contact_email FROM outreach_pilot.crm_conversation_routes WHERE conversation_id=%s', (conversation['id'],))
+                route=cur.fetchone()
+                if route and (route['portal_id'],route['contact_id'],route['contact_email']) != (hubspot_portal_id,hubspot_contact_id,recipient):
+                    raise ValueError('Conversation has a different CRM association')
             cur.execute('SELECT email FROM outreach_pilot.mailboxes WHERE id=%s',(conversation['mailbox_id'],))
             sender=cur.fetchone()['email']
             msg=EmailMessage(policy=SMTP)
@@ -88,15 +93,16 @@ class DeliveryRepository(GenerationRepository):
         d=cur.fetchone()
         return d['state']=='approved' and d['version_snapshot']==d['version_counter']==op['conversation_version']
 
-    def claim(self, *, kind, operation_id=None, lease_seconds=120):
+    def claim(self, *, kind, operation_id=None, lease_seconds=120, portal_id=None):
         if kind not in ('gmail_send','hubspot_log') or not 10<=lease_seconds<=3600:
             raise ValueError('Invalid delivery claim')
         with self.connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute('''SELECT id FROM outreach_pilot.delivery_operations
                 WHERE kind=%s AND (%s::uuid IS NULL OR id=%s::uuid)
+                AND (%s::text IS NULL OR payload->>'hubspot_portal_id'=%s)
                 AND ((state IN ('pending','reconciliation_required') AND next_attempt_at<=clock_timestamp())
                   OR (state='processing' AND lease_until<=clock_timestamp()))
-                ORDER BY next_attempt_at,id LIMIT 100''',(kind,operation_id,operation_id))
+                ORDER BY next_attempt_at,id LIMIT 100''',(kind,operation_id,operation_id,portal_id,portal_id))
             candidates=cur.fetchall()
             for candidate in candidates:
                 op=self._locked(cur,candidate['id'],skip=True)
@@ -141,6 +147,13 @@ class DeliveryRepository(GenerationRepository):
                 cur.execute("UPDATE outreach_pilot.delivery_operations SET state='superseded',lease_token=NULL,lease_until=NULL WHERE id=%s",(op['id'],))
                 self._event(cur,op,'superseded')
                 return False
+            p=op['payload']
+            if op['kind']=='gmail_send' and p.get('hubspot_portal_id') and p.get('hubspot_contact_id'):
+                from outreach_recovery.crm_handoff import register_route
+                cur.execute("SELECT reviewer FROM outreach_pilot.review_events WHERE draft_id=%s AND decision='approved'", (op['draft_id'],))
+                register_route(cur,op['conversation_id'],portal_id=p['hubspot_portal_id'],
+                    contact_id=p['hubspot_contact_id'],contact_email=p['to'],mailbox_email=p['from'],
+                    reviewer=cur.fetchone()['reviewer'],approval_reference='delivery:'+str(op['id']))
             cur.execute('UPDATE outreach_pilot.delivery_operations SET started_at=coalesce(started_at,clock_timestamp()) WHERE id=%s',(op['id'],))
             self._event(cur,op,'started')
             return True
@@ -200,6 +213,12 @@ class DeliveryRepository(GenerationRepository):
                 if thread_id:
                     cur.execute('UPDATE outreach_pilot.conversations SET gmail_thread_id=coalesce(gmail_thread_id,%s) WHERE id=%s',(thread_id,op['conversation_id']))
                 if p.get('hubspot_portal_id') and p.get('hubspot_contact_id'):
+                    from outreach_recovery.crm_handoff import register_route
+                    cur.execute("SELECT reviewer FROM outreach_pilot.review_events WHERE draft_id=%s AND decision='approved'", (op['draft_id'],))
+                    reviewer=cur.fetchone()['reviewer']
+                    register_route(cur,op['conversation_id'],portal_id=p['hubspot_portal_id'],
+                        contact_id=p['hubspot_contact_id'],contact_email=p['to'],mailbox_email=p['from'],
+                        reviewer=reviewer,approval_reference='delivery:'+str(op['id']))
                     crm=dict(p, gmail_message_id=provider_id,gmail_thread_id=thread_id or p.get('thread_id'))
                     cur.execute("""INSERT INTO outreach_pilot.delivery_operations(draft_id,envelope_id,conversation_id,mailbox_id,conversation_version,kind,depends_on,payload)
                         VALUES(%s,%s,%s,%s,%s,'hubspot_log',%s,%s) ON CONFLICT(draft_id,kind) DO NOTHING""",

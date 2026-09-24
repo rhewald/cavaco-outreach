@@ -21,3 +21,19 @@ After the user approves the displayed two records and their association, run the
 Read back the returned activity IDs and contact associations before reporting live write success. If reconciliation remains unresolved, investigate in HubSpot; do not reset the job or blindly recreate the record.
 
 Offline verification: `python -m outreach_recovery.run_postgres_tests`. Live CRM writes remain untested until the approved pilot runs.
+
+## Ongoing handoff (migration 010)
+
+Apply `010_crm_handoff.sql` after 009 before starting updated delivery/ingestion processes. Approved envelopes with explicit HubSpot IDs establish an immutable conversation/contact route before the Gmail network call. Confirmed sends create their existing `delivery_operations` CRM job atomically with the recorded send. The CRM adapter supports the pinned MIME Date in those envelopes. Explicit Gmail-only sends remain excluded from outbound CRM logging.
+
+`gmail_inbound.ingest_message()` stores the verified sender, mailbox and original subject in the same transaction as receipt/message ingestion. A routed incoming reply queues one automatically approved CRM activity, preserving its original body and timestamp. Replies received before route registration are picked up when the route is established. Unmatched or mismatched senders are not logged. Duplicate input preserves the first headers and body. Existing manually prepared jobs retain their own approval state.
+
+Existing pilot conversations can be enrolled with `CRMRepository.enable_reply_logging(completed_job_id)`, using a previously approved, completed activity's contact association. Routes are immutable; changing contacts requires an explicit migration/review, not silent reassignment.
+
+The dedicated worker services both CRM lanes and filters claims to the configured portal. It never claims Gmail send jobs:
+
+```sh
+python -m outreach_recovery.crm_worker --pilot --portal 47521149 --watch
+```
+
+For another database omit `--pilot` and set `OUTREACH_DATABASE_URL` in the worker environment. Omit `--watch` for one cycle. Each cycle handles at most one job from each queue; idle polls occur every five seconds. The local process must remain running and is not configured to restart after a Mac reboot. This change does not add Gmail inbox polling or Pub/Sub: replies must reach `ingest_message()` through the existing ingestion entry point. Inbox monitoring is a separate next milestone.

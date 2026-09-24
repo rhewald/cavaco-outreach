@@ -13,7 +13,7 @@ def parse_reply(data, *, expected_sender, mailbox_email, thread_id):
     message = BytesParser(policy=policy.default).parsebytes(decode_raw(data['raw']))
     if message.defects:
         raise ValueError('Malformed MIME')
-    for field in ('From', 'To', 'Message-ID', 'In-Reply-To', 'References'):
+    for field in ('From', 'To', 'Message-ID', 'In-Reply-To', 'References', 'Subject'):
         if len(message.get_all(field, [])) > 1:
             raise ValueError('Duplicate routing header')
     senders = getaddresses(message.get_all('From', []))
@@ -29,7 +29,11 @@ def parse_reply(data, *, expected_sender, mailbox_email, thread_id):
     if not isinstance(body, str) or not body.strip() or len(body) > 100000:
         raise ValueError('Invalid body size')
     reply_ids = re.findall(r'<[^\s<>]+@[^\s<>]+>', ' '.join(str(message.get(k, '')) for k in ('In-Reply-To','References')))
-    return dict(gmail_message_id=data['id'], gmail_thread_id=thread_id,
+    subject = str(message.get('Subject', ''))
+    if len(subject) > 998 or any(c in subject for c in '\r\n'):
+        raise ValueError('Invalid subject')
+    return dict(sender=senders[0][1], recipient=mailbox_email, subject=subject,
+                gmail_message_id=data['id'], gmail_thread_id=thread_id,
                 mime_message_id=str(message.get('Message-ID', '')) or None,
                 reply_ids=list(dict.fromkeys(reply_ids)), body=body,
                 received_at=datetime.fromtimestamp(int(data['internalDate'])/1000, timezone.utc))
@@ -69,7 +73,11 @@ def verify_accepted(adapter, payload, provider_id, provider_thread_id):
 
 def ingest_message(repository, parsed):
     with repository.connection() as conn, conn.cursor() as cur:
+        from outreach_recovery.crm_handoff import retain_inbound_headers, handoff_ingested
+        retain_inbound_headers(cur, parsed)
         cur.execute('SELECT * FROM outreach_pilot.ingest_reply(%s,%s,%s,%s,%s,%s,%s)',
                     (parsed['mailbox_id'],parsed['gmail_message_id'],parsed['gmail_thread_id'],
                      parsed['mime_message_id'],parsed['reply_ids'],parsed['body'],parsed['received_at']))
-        return cur.fetchone()
+        result = cur.fetchone()
+        handoff_ingested(cur, result[1])
+        return result

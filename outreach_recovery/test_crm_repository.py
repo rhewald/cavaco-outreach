@@ -69,3 +69,6 @@ class CRMTests(unittest.TestCase):
         for _ in range(7):self.expire();self.run_worker()
         self.assertEqual(self.sql("SELECT state FROM outreach_pilot.crm_activity_jobs WHERE id=%s",(self.intent["id"],))[0][0],"manual_review")
         self.assertEqual(self.provider.calls,1)
+
+    def test_enable_requires_completed_activity(self):
+        with self.assertRaises(ValueError):self.crm.enable_reply_logging(self.intent['id'])

@@ -30,9 +30,11 @@ def email_properties(payload):
     direction = payload.get("direction", "outbound")
     if direction not in ("inbound", "outbound"):
         raise ValueError("Invalid email direction")
-    for field in ("from", "to", "subject", "body", "timestamp", "hubspot_portal_id", "hubspot_contact_id"):
+    for field in ("from", "to", "body", "timestamp", "hubspot_portal_id", "hubspot_contact_id"):
         if not isinstance(payload.get(field), str) or not payload[field]:
             raise ValueError("Incomplete activity payload")
+    if not isinstance(payload.get("subject"), str):
+        raise ValueError("Subject must be text")
     if not payload["hubspot_contact_id"].isdigit():
         raise ValueError("Invalid contact")
     result = {"hs_timestamp": str(timestamp_ms(payload["timestamp"])),
