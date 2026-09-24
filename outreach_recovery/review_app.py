@@ -39,7 +39,7 @@ def create_app(repository,reviewer,port=8765,demo=False):
             # Do not disclose database errors, credentials, or email content.
             response=Response('Review service unavailable. Reload before retrying.',status_code=503)
         response.headers['Cache-Control']='no-store'
-        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Referrer-Policy']='no-referrer'
         return response
@@ -54,6 +54,10 @@ def create_app(repository,reviewer,port=8765,demo=False):
     @app.get('/style.css')
     def stylesheet():
         return Response((ROOT/'review_templates/style.css').read_text(),media_type='text/css')
+
+    @app.get('/cavaco-logo.avif')
+    def brand_logo():
+        return Response((ROOT/'review_templates/cavaco-logo.avif').read_bytes(),media_type='image/avif')
 
     @app.get('/reviews')
     def reviews(offset:int=0):
