@@ -77,13 +77,14 @@ and do not enqueue a draft job. Late matching can be retried using the same inpu
 
 ## Publish a generated reply draft
 
-Read history through the job's version snapshot, sorting by received_at and a
+After applying `003_draft_generation.sql`, claim a generation lease first as described
+in [GENERATION_WORKER.md](GENERATION_WORKER.md). Read history through the job's version snapshot, sorting by received_at and a
 stable tie-breaker. Exclude the triggering message if passing it separately to
 SalesGPT. Generate outside the transaction, then execute:
 
 ```sql
 BEGIN;
-SELECT outreach_pilot.save_reply_draft(%(job_id)s::uuid, %(body)s);
+SELECT outreach_pilot.save_reply_draft(%(job_id)s::uuid, %(lease_token)s::uuid, %(body)s);
 COMMIT;
 ```
 
@@ -97,6 +98,7 @@ must recheck approval and the exact conversation version at its dispatch boundar
 
 ```sh
 psql "$PILOT_DATABASE_URL" -v ON_ERROR_STOP=1 -f outreach_recovery/inbound.sql
+psql "$PILOT_DATABASE_URL" -v ON_ERROR_STOP=1 -f outreach_recovery/003_draft_generation.sql
 psql "$PILOT_DATABASE_URL" -v ON_ERROR_STOP=1 -f outreach_recovery/inbound_checks.sql
 ```
 
@@ -111,7 +113,7 @@ unrelated conversation progress, and stale draft regression cases.
 
 For an already initialized pilot schema, apply `002_ingestion_concurrency.sql`
 instead of re-running `inbound.sql`. The upgrade replaces both functions without
-recreating tables. Fresh databases only require `inbound.sql`.
+recreating tables. Fresh databases require `inbound.sql` followed by `003_draft_generation.sql` for generation workers. Apply 002 only before 003.
 
 To repeat the full disposable-database suite (Python 3.9–3.12 on a platform with
 a pgserver wheel):

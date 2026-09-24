@@ -25,6 +25,7 @@ def main():
             print("PostgreSQL:", cur.fetchone()[0], flush=True)
             cur.execute((root / "inbound.sql").read_text())
             cur.execute((root / "002_ingestion_concurrency.sql").read_text())
+            cur.execute((root / "003_draft_generation.sql").read_text())
     finally:
         conn.close()
     os.environ["OUTREACH_TEST_DATABASE_URL"] = uri

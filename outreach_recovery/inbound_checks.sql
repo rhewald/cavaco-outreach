@@ -1,4 +1,4 @@
--- Run after inbound.sql in a disposable database. All fixtures roll back.
+-- Run after inbound.sql and 003_draft_generation.sql in a disposable database. All fixtures roll back.
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$
@@ -10,6 +10,8 @@ DECLARE
     first_job uuid;
     latest_job uuid;
     draft uuid;
+    lease uuid;
+    seller uuid;
 BEGIN
     INSERT INTO outreach_pilot.mailboxes(email) VALUES ('pilot@example.test')
     RETURNING id INTO mailbox;
@@ -26,18 +28,24 @@ BEGIN
     ASSERT result.outcome = 'duplicate' AND result.conversation_version = 1;
     ASSERT (SELECT body_text = 'Interested' FROM outreach_pilot.messages
             WHERE id = result.message_id);
-    draft := outreach_pilot.save_reply_draft(first_job, 'First draft');
+    INSERT INTO outreach_pilot.seller_profiles(facts,approved_by)
+    VALUES ('{"company":"Cavaco"}', 'test-reviewer') RETURNING id INTO seller;
+    INSERT INTO outreach_pilot.conversation_contexts(conversation_id,seller_profile_id)
+    VALUES (convo,seller);
+    SELECT lease_token INTO lease FROM outreach_pilot.claim_reply_job(120,first_job);
+    draft := outreach_pilot.save_reply_draft(first_job, lease, 'First draft');
     UPDATE outreach_pilot.drafts SET state = 'approved' WHERE id = draft;
 
     SELECT * INTO result FROM outreach_pilot.ingest_reply(
         mailbox, 'reply-2', 'thread-1', '<reply2@test>', ARRAY[]::text[], 'More details', now());
     ASSERT result.conversation_version = 2;
     ASSERT (SELECT state = 'superseded' FROM outreach_pilot.drafts WHERE id = draft);
-    ASSERT outreach_pilot.save_reply_draft(first_job, 'Late stale output') IS NULL;
+    ASSERT outreach_pilot.save_reply_draft(first_job, lease, 'Late stale output') IS NULL;
     SELECT id INTO latest_job FROM outreach_pilot.reply_jobs
     WHERE triggering_message_id = result.message_id;
-    draft := outreach_pilot.save_reply_draft(latest_job, 'Current draft');
-    ASSERT outreach_pilot.save_reply_draft(latest_job, 'Duplicate output') = draft;
+    SELECT lease_token INTO lease FROM outreach_pilot.claim_reply_job(120,latest_job);
+    draft := outreach_pilot.save_reply_draft(latest_job, lease, 'Current draft');
+    ASSERT outreach_pilot.save_reply_draft(latest_job, lease, 'Duplicate output') = draft;
 
     SELECT * INTO result FROM outreach_pilot.ingest_reply(
         mailbox, 'early-reply', 'thread-later', NULL, ARRAY[]::text[], 'Early', now());
