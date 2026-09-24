@@ -188,3 +188,51 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(page.status_code,200)
         self.assertIn('value="name:Filter Co" selected',page.text)
         self.assertIn('Date · newest first',page.text)
+
+    def bulk_preview(self):
+        return self.client.post('/reviews/bulk-preview',data={'csrf':self.form()['csrf'],'draft_id':str(self.draft)},headers={'origin':'http://127.0.0.1:8765'})
+
+    def test_bulk_confirmation_approval_and_repeat(self):
+        preview=self.bulk_preview()
+        self.assertEqual(preview.status_code,200)
+        self.assertEqual(self.state(),'pending_review')
+        token=re.search(r'name="selection" value="([^"]+)"',preview.text).group(1)
+        data={'csrf':self.form()['csrf'],'selection':token}
+        for _ in range(2):
+            response=self.client.post('/reviews/bulk-approve',data=data,headers={'origin':'http://127.0.0.1:8765'})
+            self.assertEqual(response.status_code,200)
+        self.assertEqual(self.state(),'approved')
+        self.assertEqual(len(self.events()),1)
+
+    def test_bulk_stale_and_tampered_confirmation(self):
+        preview=self.bulk_preview()
+        token=re.search(r'name="selection" value="([^"]+)"',preview.text).group(1)
+        csrf=self.form()['csrf']
+        bad=self.client.post('/reviews/bulk-approve',data={'csrf':csrf,'selection':token+'bad'},headers={'origin':'http://127.0.0.1:8765'})
+        self.assertEqual(bad.status_code,400)
+        self.assertEqual(self.state(),'pending_review')
+        self.ingest('bulk-new-reply')
+        result=self.client.post('/reviews/bulk-approve',data={'csrf':csrf,'selection':token},headers={'origin':'http://127.0.0.1:8765'})
+        self.assertEqual(result.status_code,200)
+        self.assertNotEqual(self.state(),'approved')
+        self.assertIn('Skipped:',result.text)
+
+    def test_bulk_requires_selection_and_csrf(self):
+        for data,status in [({'csrf':self.form()['csrf']},400),({'draft_id':str(self.draft),'csrf':'wrong'},403)]:
+            response=self.client.post('/reviews/bulk-preview',data=data,headers={'origin':'http://127.0.0.1:8765'})
+            self.assertEqual(response.status_code,status)
+        self.assertEqual(self.state(),'pending_review')
+
+    def test_bulk_multiple_drafts_partial_result(self):
+        second=self.sql("INSERT INTO outreach_pilot.drafts(conversation_id,triggering_message_id,version_snapshot,body) SELECT conversation_id,NULL,version_snapshot,'Second full draft' FROM outreach_pilot.drafts WHERE id=%s RETURNING id",(self.draft,))[0][0]
+        csrf=self.form()['csrf']
+        preview=self.client.post('/reviews/bulk-preview',data={'csrf':csrf,'draft_id':[str(self.draft),str(second)]},headers={'origin':'http://127.0.0.1:8765'})
+        self.assertEqual(preview.status_code,200)
+        tokens=re.findall(r'name="selection" value="([^"]+)"',preview.text)
+        self.assertEqual(len(tokens),2)
+        self.reviews.decide(second,'rejected','Local Reviewer')
+        result=self.client.post('/reviews/bulk-approve',data={'csrf':csrf,'selection':tokens},headers={'origin':'http://127.0.0.1:8765'})
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(self.state(),'approved')
+        self.assertIn('Skipped:',result.text)
+        self.assertEqual(self.sql('SELECT state FROM outreach_pilot.drafts WHERE id=%s',(second,))[0][0],'rejected')

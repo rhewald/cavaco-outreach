@@ -19,7 +19,7 @@ class ReviewRepository(GenerationRepository):
             cur.execute("SELECT DISTINCT m.email FROM outreach_pilot.drafts d JOIN outreach_pilot.conversations c ON c.id=d.conversation_id JOIN outreach_pilot.mailboxes m ON m.id=c.mailbox_id WHERE d.state='pending_review' ORDER BY m.email")
             mailboxes=[row['email'] for row in cur.fetchall()]
             base="""WITH queue AS (
-                SELECT d.id,d.version_snapshot,left(d.body,180) AS preview,
+                SELECT d.id,d.version_snapshot,d.body AS preview,
                   c.gmail_thread_id,m.email AS mailbox,
                   route.portal_id,route.contact_id,rc.linkedin_url,rc.phones,
                   coalesce(rc.display_name,'') AS display_name,coalesce(rc.company_name,'') AS company_name,

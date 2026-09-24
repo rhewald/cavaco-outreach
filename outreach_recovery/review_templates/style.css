@@ -11,3 +11,5 @@
 .brand{background:transparent;border-radius:0;padding:0;margin:0 0 36px}.brand img{width:100%;height:auto}@media(max-width:700px){.brand{max-width:210px;margin:0}.brand img{width:100%}}
 
 .contact-name-link{color:#2853a6;text-decoration:underline;text-underline-offset:3px}.contact-name-link:hover{color:#142c61}.contact-name-link::after{content:" ↗";font-size:.8em}
+
+.full-draft{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.7;color:#283954;margin:14px 0 18px}.bulk-bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:16px 20px;border:1px solid #ccd9ed;border-radius:12px;background:#eaf0fa}.bulk-bar label{margin:0}.bulk-bar small{flex-basis:100%}.draft-select{margin:4px 0 0}.draft-select input,.bulk-bar input{width:18px;height:18px;accent-color:#2853a6}button:disabled{opacity:.45;cursor:not-allowed}.prospect-row{align-items:start}

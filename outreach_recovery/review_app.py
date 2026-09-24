@@ -1,5 +1,8 @@
 """Local, single-reviewer pilot. Binding to public interfaces is unsupported."""
 import argparse
+import base64
+import json
+import hashlib
 import hmac
 import os
 import secrets
@@ -39,7 +42,7 @@ def create_app(repository,reviewer,port=8765,demo=False):
             # Do not disclose database errors, credentials, or email content.
             response=Response('Review service unavailable. Reload before retrying.',status_code=503)
         response.headers['Cache-Control']='no-store'
-        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Referrer-Policy']='no-referrer'
         return response
@@ -70,6 +73,69 @@ def create_app(repository,reviewer,port=8765,demo=False):
         return page('list.html',**data,**filters,offset=offset,
                     previous='/reviews?'+urlencode(dict(filters,offset=max(0,offset-50))),
                     next_page='/reviews?'+urlencode(dict(filters,offset=offset+50)))
+
+    @app.get('/queue.js')
+    def queue_script():
+        return Response((ROOT/'review_templates/queue.js').read_text(),media_type='text/javascript')
+
+    async def bulk_form(request, field):
+        if request.headers.get('content-type','').split(';')[0]!='application/x-www-form-urlencoded':
+            raise HTTPException(415,'Expected a review form')
+        body=bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body)>65536: raise HTTPException(413,'Selection too large')
+        try: form=parse_qs(body.decode(),keep_blank_values=True,max_num_fields=52)
+        except (ValueError,UnicodeError): raise HTTPException(400,'Invalid selection')
+        if set(form)-{'csrf',field} or len(form.get('csrf',[]))!=1:
+            raise HTTPException(400,'Invalid selection')
+        if not hmac.compare_digest(form['csrf'][0].encode(),csrf.encode()):
+            raise HTTPException(403,'Review token expired; reload the queue')
+        values=form.get(field,[])
+        if not 1<=len(values)<=50 or len(values)!=len(set(values)):
+            raise HTTPException(400,'Select between 1 and 50 distinct drafts')
+        return values
+
+    def sign_selection(draft):
+        envelope=draft['delivery_envelope']
+        data=json.dumps([str(draft['id']),str(envelope['id']) if envelope else None],separators=(',',':'))
+        encoded=base64.urlsafe_b64encode(data.encode()).decode()
+        return encoded+'.'+hmac.new(csrf.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+
+    @app.post('/reviews/bulk-preview')
+    async def bulk_preview(request:Request):
+        ids=await bulk_form(request,'draft_id')
+        try: ids=[UUID(value) for value in ids]
+        except ValueError: raise HTTPException(400,'Invalid draft ID')
+        selected=[]
+        for draft_id in ids:
+            draft=await run_in_threadpool(repository.detail,draft_id)
+            if not draft or draft['state']!='pending_review' or draft['version_snapshot']!=draft['version_counter']:
+                raise HTTPException(409,'A selected draft changed. Return to the queue and select again.')
+            selected.append(dict(draft=draft,token=sign_selection(draft)))
+        return page('bulk.html',selected=selected,results=None)
+
+    @app.post('/reviews/bulk-approve')
+    async def bulk_approve(request:Request):
+        tokens=await bulk_form(request,'selection')
+        selections=[]
+        for token in tokens:
+            try:
+                encoded,signature=token.split('.')
+                expected=hmac.new(csrf.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(signature,expected): raise ValueError()
+                draft_id,envelope_id=json.loads(base64.urlsafe_b64decode(encoded))
+                selections.append((UUID(draft_id),UUID(envelope_id) if envelope_id else None))
+            except Exception: raise HTTPException(400,'Invalid or expired confirmation; review the selection again')
+        if len({d for d,e in selections})!=len(selections): raise HTTPException(400,'Duplicate selection')
+        results=[]
+        for draft_id,envelope_id in selections:
+            try:
+                outcome=await run_in_threadpool(repository.decide,draft_id,'approved',reviewer,'',envelope_id)
+            except Exception:
+                outcome='unconfirmed'
+            results.append(dict(id=draft_id,outcome=outcome))
+        return page('bulk.html',selected=[],results=results)
 
     @app.get('/reviews/{draft_id}')
     def detail(draft_id:UUID):
