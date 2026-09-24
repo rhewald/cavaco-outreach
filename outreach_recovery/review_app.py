@@ -55,9 +55,9 @@ def create_app(repository,reviewer,port=8765,demo=False):
     def stylesheet():
         return Response((ROOT/'review_templates/style.css').read_text(),media_type='text/css')
 
-    @app.get('/cavaco-logo.avif')
+    @app.get('/cavaco-logo.png')
     def brand_logo():
-        return Response((ROOT/'review_templates/cavaco-logo.avif').read_bytes(),media_type='image/avif')
+        return Response((ROOT/'review_templates/cavaco-logo.png').read_bytes(),media_type='image/png')
 
     @app.get('/reviews')
     def reviews(offset:int=0,q:str='',kind:str='',mailbox:str='',sort:str='oldest',company:str=''):

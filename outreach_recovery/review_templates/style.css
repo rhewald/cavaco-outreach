@@ -7,3 +7,5 @@
 .queue-filters .queue-search{flex:0 0 100%;font-size:14px}.queue-filters .queue-search input{font-size:16px;min-height:50px;border-color:#829bc1;background:#f8faff}.queue-filters .queue-search input:focus{background:white}
 
 .contact-links{display:flex;flex-direction:column;gap:5px;margin-top:10px;font-size:12px;overflow-wrap:anywhere}.contact-links small{font-size:11px}.contact-links a{font-weight:600}
+
+.brand{background:#fff;border-radius:10px;padding:12px;margin:0 0 36px}.brand img{width:100%;height:auto}@media(max-width:700px){.brand{max-width:210px;margin:0}.brand img{width:100%}}
