@@ -4,7 +4,7 @@ import hmac
 import os
 import secrets
 from pathlib import Path
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
@@ -60,10 +60,16 @@ def create_app(repository,reviewer,port=8765,demo=False):
         return Response((ROOT/'review_templates/cavaco-logo.avif').read_bytes(),media_type='image/avif')
 
     @app.get('/reviews')
-    def reviews(offset:int=0):
-        if offset<0 or offset>1000000:
-            raise HTTPException(400,'Invalid page')
-        return page('list.html',drafts=repository.pending(offset),offset=offset)
+    def reviews(offset:int=0,q:str='',kind:str='',mailbox:str='',sort:str='oldest'):
+        if offset<0 or offset>1000000 or len(q)>200 or len(mailbox)>320:
+            raise HTTPException(400,'Invalid queue filter')
+        if sort not in ('oldest','newest','prospect','company') or kind not in ('','initial','reply','followup'):
+            raise HTTPException(400,'Invalid queue filter')
+        data=repository.queue(offset,q,kind,mailbox,sort)
+        filters=dict(q=q,kind=kind,mailbox=mailbox,sort=sort)
+        return page('list.html',**data,**filters,offset=offset,
+                    previous='/reviews?'+urlencode(dict(filters,offset=max(0,offset-50))),
+                    next_page='/reviews?'+urlencode(dict(filters,offset=offset+50)))
 
     @app.get('/reviews/{draft_id}')
     def detail(draft_id:UUID):
@@ -136,7 +142,7 @@ def main():
         conn=psycopg2.connect(dsn)
         try:
             with conn,conn.cursor() as cur:
-                for name in ('inbound.sql','002_ingestion_concurrency.sql','003_draft_generation.sql','004_seller_validation.sql','005_human_review.sql','006_delivery_outbox.sql'):
+                for name in ('inbound.sql','002_ingestion_concurrency.sql','003_draft_generation.sql','004_seller_validation.sql','005_human_review.sql','006_delivery_outbox.sql','007_initial_outreach.sql','008_provider_observations.sql','009_crm_activity_jobs.sql','010_crm_handoff.sql','011_gmail_monitor.sql','012_review_context.sql'):
                     cur.execute((ROOT/name).read_text())
         finally:
             conn.close()
