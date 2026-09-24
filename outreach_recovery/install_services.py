@@ -36,6 +36,9 @@ def main():
         for label in LABELS.values():subprocess.run(['launchctl','bootout','gui/'+uid+'/'+label],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     target=code/'outreach_recovery'
     shutil.copytree(Path(__file__).parent,target,dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+    entrypoint=python.parent/'sdr'
+    entrypoint.write_text('#!'+str(python)+'\nimport sys\nsys.path.insert(0, '+repr(str(code))+')\nfrom outreach_recovery.send_approved import main\nraise SystemExit(main())\n')
+    entrypoint.chmod(0o700)
     for kind,label in LABELS.items():
         path=agents/(label+'.plist')
         path.write_bytes(plistlib.dumps(configuration(kind,python,code,logs,args.mailbox,args.portal)))

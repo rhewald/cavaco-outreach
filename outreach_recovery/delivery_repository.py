@@ -45,6 +45,21 @@ class DeliveryRepository(GenerationRepository):
                     raise ValueError('Conversation has a different CRM association')
             cur.execute('SELECT email FROM outreach_pilot.mailboxes WHERE id=%s',(conversation['mailbox_id'],))
             sender=cur.fetchone()['email']
+            # Reuse a previously displayed envelope; never mint new MIME on a retry.
+            cur.execute('SELECT id,payload FROM outreach_pilot.delivery_envelopes WHERE draft_id=%s', (str(draft_id),))
+            existing=cur.fetchone()
+            if existing:
+                from email.parser import BytesParser
+                old=existing['payload']
+                raw=base64.urlsafe_b64decode(old['raw_mime'])
+                mime=BytesParser(policy=SMTP).parsebytes(raw)
+                expected=(recipient,subject,sender,draft['body'],hubspot_portal_id,hubspot_contact_id,
+                          in_reply_to or '', ' '.join(references or ((in_reply_to,) if in_reply_to else ())))
+                actual=(old['to'],old['subject'],old['from'],old['body'],old['hubspot_portal_id'],old['hubspot_contact_id'],
+                        str(mime.get('In-Reply-To','')),str(mime.get('References','')))
+                if actual!=expected:
+                    raise ValueError('Existing delivery envelope differs; create a new reviewed draft')
+                return existing['id']
             msg=EmailMessage(policy=SMTP)
             message_id=f'<{uuid4()}@{sender.split("@")[-1]}>'
             msg['From']=sender; msg['To']=recipient; msg['Subject']=subject
