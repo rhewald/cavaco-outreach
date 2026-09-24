@@ -3,13 +3,17 @@ import argparse
 import importlib
 import json
 import logging
+import math
+import time
 import multiprocessing
 import os
 import signal
 import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 LOG = logging.getLogger(__name__)
+GENERATION_CONTEXT = ContextVar("generation_context", default={})
 
 
 class InvalidContext(ValueError):
@@ -18,6 +22,16 @@ class InvalidContext(ValueError):
 
 class PermanentModelError(RuntimeError):
     pass
+
+
+class ModelConfigurationError(PermanentModelError):
+    """Configuration failures halt the daemon rather than draining the queue."""
+    CODES = {"missing_api_key", "missing_or_invalid_model", "invalid_output_limit",
+             "missing_sdk", "invalid_timeout", "provider_access_denied"}
+
+    def __init__(self, code):
+        self.code = code if code in self.CODES else "invalid_configuration"
+        super().__init__(self.code)
 
 
 def build_prompt(snapshot, max_chars=100000):
@@ -98,7 +112,10 @@ class GenerationRepository:
             return cur.fetchone()[0]
 
 
-def _generate_child(pipe, reference, messages, timeout_seconds):
+def _generate_child(pipe, reference, messages, timeout_seconds, job_metadata=None):
+    logging.basicConfig(level=logging.INFO)
+    GENERATION_CONTEXT.set(job_metadata or {})
+    started = time.monotonic()
     try:
         module, name = reference.split(":", 1)
         generate = getattr(importlib.import_module(module), name)
@@ -108,12 +125,18 @@ def _generate_child(pipe, reference, messages, timeout_seconds):
         if any(marker in body for marker in ("<END_OF_TURN>", "<END_OF_CALL>", "<BOT>", "</BOT>")):
             raise PermanentModelError("Internal markers in model output")
         pipe.send(("ok", body.strip()))
+    except ModelConfigurationError as exc:
+        pipe.send(("configuration", exc.code))
     except PermanentModelError:
         pipe.send(("permanent", "Model rejected request or returned invalid output"))
     except Exception:
         # Provider exceptions can include credentials, prompts, or personal data.
         pipe.send(("retry", "Model execution failed"))
     finally:
+        if job_metadata:
+            LOG.info("generation_attempt job_id=%s attempt=%s duration_ms=%s",
+                     job_metadata["job_id"], job_metadata["attempt"],
+                     round((time.monotonic()-started)*1000))
         pipe.close()
 
 
@@ -124,16 +147,24 @@ class ProcessGenerator:
     Credentials may be supplied through its environment; it receives no DB handle.
     """
     def __init__(self, reference, timeout_seconds=60):
-        if ":" not in reference or not 0 < timeout_seconds <= 3300:
+        if ":" not in reference or not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 3300:
             raise ValueError("Expected module:function and timeout in (0, 3300]")
         self.reference = reference
         self.timeout_seconds = timeout_seconds
+        self.job_metadata = None
+
+    def preflight(self):
+        module, name = self.reference.split(":", 1)
+        generate = getattr(importlib.import_module(module), name)
+        check = getattr(generate, "preflight", None)
+        if check:
+            check()
 
     def generate(self, messages):
         context = multiprocessing.get_context("spawn")
         receiver, sender = context.Pipe(duplex=False)
         process = context.Process(target=_generate_child,
-                                  args=(sender, self.reference, messages, self.timeout_seconds))
+                                  args=(sender, self.reference, messages, self.timeout_seconds, self.job_metadata))
         try:
             process.start()
             sender.close()
@@ -143,6 +174,8 @@ class ProcessGenerator:
                 outcome, value = receiver.recv()
             except EOFError as exc:
                 raise RuntimeError("Model subprocess exited without a result") from exc
+            if outcome == "configuration":
+                raise ModelConfigurationError(value)
             if outcome == "permanent":
                 raise PermanentModelError(value)
             if outcome != "ok":
@@ -171,14 +204,23 @@ class GenerationWorker:
         self.lease_seconds = lease_seconds
 
     def run_once(self):
+        preflight = getattr(self.generator, "preflight", None)
+        if preflight:
+            preflight()
         job = self.repository.claim(self.lease_seconds)
         if job is None:
             return "idle"
+        LOG.info("generation_claim job_id=%s attempt=%s", job["id"], job["attempts"])
+        if isinstance(self.generator, ProcessGenerator):
+            self.generator.job_metadata = {"job_id":str(job["id"]), "attempt":job["attempts"]}
         try:
             messages = build_prompt(job["context_snapshot"])
             body = self.generator.generate(messages)
             if not isinstance(body, str) or not body.strip() or len(body) > 20000:
                 raise PermanentModelError("Invalid model output")
+        except ModelConfigurationError as exc:
+            self.repository.fail(job, "Model configuration error: " + exc.code, permanent=True)
+            raise
         except (InvalidContext, PermanentModelError):
             accepted = self.repository.fail(job, "Invalid context or model response; review required", permanent=True)
             return "dead_letter" if accepted else "discarded"
@@ -198,14 +240,26 @@ def main():
     parser.add_argument("--lease-seconds", type=int, default=120)
     parser.add_argument("--poll-seconds", type=float, default=2)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--job-id", type=str, help="Claim only this job; requires --once")
     args = parser.parse_args()
+    if args.job_id and not args.once:
+        parser.error("job-id requires --once")
     if args.poll_seconds <= 0:
         parser.error("poll-seconds must be positive")
     dsn = os.environ.get("OUTREACH_DATABASE_URL")
     if not dsn:
         parser.error("Set OUTREACH_DATABASE_URL")
     logging.basicConfig(level=logging.INFO)
-    worker = GenerationWorker(GenerationRepository(dsn), ProcessGenerator(args.generator, args.timeout), args.lease_seconds)
+    repository = GenerationRepository(dsn)
+    if args.job_id:
+        from uuid import UUID
+        try:
+            job_id = str(UUID(args.job_id))
+        except ValueError:
+            parser.error("job-id must be a UUID")
+        original_claim = repository.claim
+        repository.claim = lambda lease_seconds: original_claim(lease_seconds, job_id)
+    worker = GenerationWorker(repository, ProcessGenerator(args.generator, args.timeout), args.lease_seconds)
     stop = threading.Event()
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, lambda *_: stop.set())
@@ -213,6 +267,9 @@ def main():
         try:
             result = worker.run_once()
             LOG.info("generation_cycle outcome=%s", result)
+        except ModelConfigurationError as exc:
+            LOG.error("generation_stopped configuration_error=%s", exc.code)
+            return 2
         except Exception:
             LOG.error("generation_cycle database/worker failure; retrying after polling interval")
             if args.once:
@@ -226,4 +283,6 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Keep exception identities identical to adapters importing this module.
+    from outreach_recovery.generation import main as entrypoint
+    raise SystemExit(entrypoint())

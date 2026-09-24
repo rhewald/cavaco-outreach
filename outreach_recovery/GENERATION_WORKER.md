@@ -182,3 +182,10 @@ is absent; the claim boundary stops generation. This avoids losing incoming mail
 
 Validation enforces structure, not factual truth or authorization. `approved_by`
 remains an audit attribution, and human review of business claims is still needed.
+
+## Direct OpenAI adapter
+
+`outreach_recovery.openai_adapter:generate` now implements the provider boundary.
+See [OPENAI_ADAPTER.md](OPENAI_ADAPTER.md) for configuration guards, failure
+classification, telemetry limits, and the single-job synthetic smoke runner.
+SalesGPT remains optional and is not configured by this change.

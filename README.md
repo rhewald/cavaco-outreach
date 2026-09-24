@@ -43,3 +43,7 @@ Seller profiles now have versioned database validation; apply migration
 `outreach_recovery/004_seller_validation.sql` after 003. See
 [outreach_recovery/GENERATION_WORKER.md](outreach_recovery/GENERATION_WORKER.md)
 for pricing rules, example facts, and legacy profile recovery limits.
+
+Direct OpenAI generation is implemented behind the existing callable contract.
+See [OpenAI adapter setup and one-job live smoke test](outreach_recovery/OPENAI_ADAPTER.md).
+Live provider validation remains pending until a locally configured API key is available.
