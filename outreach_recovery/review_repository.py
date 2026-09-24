@@ -1,5 +1,6 @@
 """Short review transactions, no generation or delivery."""
 from datetime import timezone
+from outreach_recovery.contact_display import decorate
 from psycopg2.extras import RealDictCursor
 from outreach_recovery.generation import GenerationRepository
 
@@ -20,6 +21,7 @@ class ReviewRepository(GenerationRepository):
             base="""WITH queue AS (
                 SELECT d.id,d.version_snapshot,left(d.body,180) AS preview,
                   c.gmail_thread_id,m.email AS mailbox,
+                  route.portal_id,route.contact_id,rc.linkedin_url,rc.phones,
                   coalesce(rc.display_name,'') AS display_name,coalesce(rc.company_name,'') AS company_name,
                   coalesce(e.payload->>'to',route.contact_email,h.sender,'') AS recipient,
                   coalesce(e.payload->>'subject',h.subject,'Subject not available') AS subject,
@@ -46,6 +48,7 @@ class ReviewRepository(GenerationRepository):
             cur.execute(base+'SELECT * FROM queue'+where+' ORDER BY '+orders[sort]+' LIMIT 50 OFFSET %s',params+(offset,))
             drafts=cur.fetchall()
             for draft in drafts:
+                decorate(draft)
                 if draft['activity_at']: draft['activity_at']=draft['activity_at'].astimezone(timezone.utc)
             return dict(drafts=drafts,total=total,mailboxes=mailboxes)
 
@@ -68,6 +71,8 @@ class ReviewRepository(GenerationRepository):
             draft['audit']=cur.fetchone()
             cur.execute('SELECT id,payload FROM outreach_pilot.delivery_envelopes WHERE draft_id=%s',(str(draft_id),))
             draft['delivery_envelope']=cur.fetchone()
+            cur.execute('SELECT rc.*,route.portal_id,route.contact_id,route.contact_email AS recipient FROM outreach_pilot.conversations c LEFT JOIN outreach_pilot.review_contacts rc ON rc.conversation_id=c.id LEFT JOIN outreach_pilot.crm_conversation_routes route ON route.conversation_id=c.id WHERE c.id=%s',(draft['conversation_id'],))
+            draft['contact']=decorate(cur.fetchone())
             return draft
 
     def decide(self,draft_id,decision,reviewer,reason='',envelope_id=None):

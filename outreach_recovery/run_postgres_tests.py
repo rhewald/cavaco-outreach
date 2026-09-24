@@ -35,6 +35,7 @@ def main():
             cur.execute((root / "010_crm_handoff.sql").read_text())
             cur.execute((root / "011_gmail_monitor.sql").read_text())
             cur.execute((root / "012_review_context.sql").read_text())
+            cur.execute((root / "013_review_contact_links.sql").read_text())
     finally:
         conn.close()
     os.environ["OUTREACH_TEST_DATABASE_URL"] = uri

@@ -142,7 +142,7 @@ def main():
         conn=psycopg2.connect(dsn)
         try:
             with conn,conn.cursor() as cur:
-                for name in ('inbound.sql','002_ingestion_concurrency.sql','003_draft_generation.sql','004_seller_validation.sql','005_human_review.sql','006_delivery_outbox.sql','007_initial_outreach.sql','008_provider_observations.sql','009_crm_activity_jobs.sql','010_crm_handoff.sql','011_gmail_monitor.sql','012_review_context.sql'):
+                for name in ('inbound.sql','002_ingestion_concurrency.sql','003_draft_generation.sql','004_seller_validation.sql','005_human_review.sql','006_delivery_outbox.sql','007_initial_outreach.sql','008_provider_observations.sql','009_crm_activity_jobs.sql','010_crm_handoff.sql','011_gmail_monitor.sql','012_review_context.sql','013_review_contact_links.sql'):
                     cur.execute((ROOT/name).read_text())
         finally:
             conn.close()
