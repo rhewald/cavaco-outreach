@@ -71,13 +71,18 @@ def verify_accepted(adapter, payload, provider_id, provider_thread_id):
     return actual[3]
 
 
+def ingest_in_transaction(cur, parsed):
+    """Caller owns the transaction; used to commit monitor receipt atomically."""
+    from outreach_recovery.crm_handoff import retain_inbound_headers, handoff_ingested
+    retain_inbound_headers(cur, parsed)
+    cur.execute('SELECT * FROM outreach_pilot.ingest_reply(%s,%s,%s,%s,%s,%s,%s)',
+                (parsed['mailbox_id'],parsed['gmail_message_id'],parsed['gmail_thread_id'],
+                 parsed['mime_message_id'],parsed['reply_ids'],parsed['body'],parsed['received_at']))
+    result = cur.fetchone()
+    handoff_ingested(cur, result[1])
+    return result
+
+
 def ingest_message(repository, parsed):
     with repository.connection() as conn, conn.cursor() as cur:
-        from outreach_recovery.crm_handoff import retain_inbound_headers, handoff_ingested
-        retain_inbound_headers(cur, parsed)
-        cur.execute('SELECT * FROM outreach_pilot.ingest_reply(%s,%s,%s,%s,%s,%s,%s)',
-                    (parsed['mailbox_id'],parsed['gmail_message_id'],parsed['gmail_thread_id'],
-                     parsed['mime_message_id'],parsed['reply_ids'],parsed['body'],parsed['received_at']))
-        result = cur.fetchone()
-        handoff_ingested(cur, result[1])
-        return result
+        return ingest_in_transaction(cur, parsed)
