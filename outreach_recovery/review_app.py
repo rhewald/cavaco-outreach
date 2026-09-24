@@ -81,10 +81,10 @@ def create_app(repository,reviewer,port=8765,demo=False):
             if len(body)>16384:
                 raise HTTPException(413,'Review form too large')
         try:
-            form=parse_qs(body.decode('utf-8'),keep_blank_values=True,max_num_fields=3)
+            form=parse_qs(body.decode('utf-8'),keep_blank_values=True,max_num_fields=4)
         except (ValueError,UnicodeError):
             raise HTTPException(400,'Invalid form')
-        if set(form)-{'csrf','reason'} or any(len(v)!=1 for v in form.values()):
+        if set(form)-{'csrf','reason','envelope_id'} or any(len(v)!=1 for v in form.values()):
             raise HTTPException(400,'Invalid form fields')
         token=form.get('csrf',[''])[0]
         if not hmac.compare_digest(token.encode('utf-8'),csrf.encode('utf-8')):
@@ -92,11 +92,16 @@ def create_app(repository,reviewer,port=8765,demo=False):
         reason=form.get('reason',[''])[0].strip()
         if len(reason)>2000:
             raise HTTPException(400,'Reason exceeds 2000 characters')
-        result=await run_in_threadpool(repository.decide,draft_id,decision,reviewer,reason)
+        envelope_id=form.get('envelope_id',[''])[0]
+        try:
+            envelope_id=UUID(envelope_id) if envelope_id else None
+        except ValueError:
+            raise HTTPException(400,'Invalid delivery envelope')
+        result=await run_in_threadpool(repository.decide,draft_id,decision,reviewer,reason,envelope_id)
         if result=='not_found':
             raise HTTPException(404,'Draft not found')
         if result in ('superseded','conflict'):
-            text='A new reply arrived. This draft cannot be approved.' if result=='superseded' else 'This draft already has a different decision.'
+            text='A new reply arrived. This draft cannot be approved.' if result=='superseded' else 'The draft decision or delivery details changed. Reload before approving.'
             response=page('result.html',message=text,draft_id=draft_id)
             response.status_code=409
             return response
@@ -131,7 +136,7 @@ def main():
         conn=psycopg2.connect(dsn)
         try:
             with conn,conn.cursor() as cur:
-                for name in ('inbound.sql','002_ingestion_concurrency.sql','003_draft_generation.sql','004_seller_validation.sql','005_human_review.sql'):
+                for name in ('inbound.sql','002_ingestion_concurrency.sql','003_draft_generation.sql','004_seller_validation.sql','005_human_review.sql','006_delivery_outbox.sql'):
                     cur.execute((ROOT/name).read_text())
         finally:
             conn.close()

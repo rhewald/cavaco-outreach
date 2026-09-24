@@ -31,10 +31,12 @@ class ReviewRepository(GenerationRepository):
             draft['history']=cur.fetchall()
             cur.execute("SELECT decision,reviewer,reason,created_at FROM outreach_pilot.review_events WHERE draft_id=%s",(str(draft_id),))
             draft['audit']=cur.fetchone()
+            cur.execute('SELECT id,payload FROM outreach_pilot.delivery_envelopes WHERE draft_id=%s',(str(draft_id),))
+            draft['delivery_envelope']=cur.fetchone()
             return draft
 
-    def decide(self,draft_id,decision,reviewer,reason=''):
+    def decide(self,draft_id,decision,reviewer,reason='',envelope_id=None):
         with self.connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT outreach_pilot.review_draft(%s,%s,%s,%s)",
-                        (str(draft_id),decision,reviewer,reason))
+            cur.execute("SELECT outreach_pilot.review_draft(%s,%s,%s,%s,%s)",
+                        (str(draft_id),decision,reviewer,reason,str(envelope_id) if envelope_id else None))
             return cur.fetchone()[0]

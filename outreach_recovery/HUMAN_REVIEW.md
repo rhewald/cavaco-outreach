@@ -80,3 +80,9 @@ reviewer fields, oversized forms, and stale browser submissions.
 The first live OpenAI smoke test was reported successful by the user on 2026-09-24:
 model gpt-4o-mini, 339 total tokens, about 3.4 seconds, one pending-review draft.
 The review demo uses its own synthetic draft rather than that cleaned-up database.
+
+## Delivery extension (006)
+
+Apply migration 006 before running the current review app. Prepared envelopes are
+shown before approval and their IDs are checked atomically when creating a send
+intent. Drafts without an envelope remain review-only. See [DELIVERY.md](DELIVERY.md).

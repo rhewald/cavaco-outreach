@@ -4,11 +4,13 @@ Supervised sales outreach with HubSpot as the business source of truth, Gmail fo
 
 ## Current status
 
-This repository contains the email recovery policy, atomic inbound transactions, a leased draft-generation worker, a versioned context builder, and simulation plus PostgreSQL integration tests. It is not a deployed service. Live Gmail, HubSpot, OpenSales, and model/SalesGPT provider adapters remain to be connected. The SQL and integration tests have been exercised against a disposable PostgreSQL 16.2 instance.
+This repository contains PostgreSQL inbound ingestion, leased draft generation, seller-profile validation, a live-tested direct OpenAI adapter, the Cavaco Outreach review interface, and a durable delivery outbox with provider contracts and crash-recovery tests. It is not a deployed service. Live Gmail, HubSpot, OpenSales, and SalesGPT adapters remain to be connected. The SQL and integration tests run against disposable PostgreSQL 16.2.
+
+The [delivery milestone guide](outreach_recovery/DELIVERY.md) documents approval-bound send intents, independent CRM operations, reconciliation, and remaining live integration work.
 
 ## Run the tests
 
-Requires Python 3.9 or newer; no external packages or credentials are needed.
+Requires Python 3.9 or newer and the test dependencies in the component guides; no live API credentials are needed.
 
 ```sh
 python3 -m unittest discover -s outreach_recovery -p 'test_*.py' -v
@@ -33,7 +35,7 @@ See the [generation-worker guide](outreach_recovery/GENERATION_WORKER.md) for mi
 
 Complete one supervised lead loop: research and record a contact in HubSpot, approve an outreach draft, send through Gmail, receive and match the reply, generate a follow-up draft, and synchronize activity to HubSpot.
 
-Before live operation, implement the PostgreSQL repository, Gmail and HubSpot adapters, mailbox notification ingestion, seller content configuration, approval interface, and real integration tests. Uncertain send outcomes must remain in reconciliation or manual review; an empty search result must never automatically authorize a repeat send.
+Before live operation, implement Gmail and HubSpot adapters, mailbox notification ingestion, configure real approved seller content, and complete supervised live integration tests. Uncertain send outcomes must remain in reconciliation or manual review; an empty search result must never automatically authorize a repeat send.
 
 ## Origin
 
