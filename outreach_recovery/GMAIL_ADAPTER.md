@@ -11,8 +11,9 @@ as `gmail` to `DeliveryWorker`. Never call `send` directly from the review handl
 The adapter has no database dependency and performs no database writes.
 
 The credential provider must supply a valid OAuth access token within the provided
-budget. Browser consent, token refresh, secure token storage, OAuth client setup,
-and mailbox onboarding are NOT implemented in this milestone. Do not paste tokens
+budget. Local browser consent, token refresh and private-file credential storage are now
+implemented in `gmail_auth.py`; see GMAIL_AUTH.md. Cloud OAuth client creation and
+live account onboarding still require the account owner. Do not paste tokens
 into chat or commit credentials. No service-account delegation choice is implied.
 A future OAuth provider should request gmail.send plus gmail.readonly for this
 send-and-reconcile scope; metadata-only access cannot fetch raw message bodies.
@@ -71,8 +72,8 @@ They cover unchanged MIME, account mismatch, header injection, explicit rejectio
 ambiguous errors/timeouts, missing IDs, pagination, conflicting/multiple matches,
 empty lookup, and successful/uncertain HTTP outcomes through the durable worker.
 
-Next: implement local OAuth onboarding/token refresh and a read-only mailbox
-verification command. Then explicitly configure a controlled sender and recipient
+Next: run local OAuth onboarding and read-only verification for the selected
+`sdr@cavaco.ai` mailbox. Then explicitly configure a controlled sender and recipient
 for supervised send/reconciliation testing. HubSpot remains a separate pending adapter.
 
 ## Official API references

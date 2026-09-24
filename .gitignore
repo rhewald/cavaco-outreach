@@ -5,3 +5,8 @@ __pycache__/
 .env.*
 !.env.example
 .DS_Store
+
+# Local Google OAuth secrets must remain outside this repository.
+gmail-token*.json
+client_secret*.json
+credentials.json
