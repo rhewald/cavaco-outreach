@@ -1,4 +1,4 @@
-"""One bounded durable operation per invocation; no live adapters are bundled yet."""
+"""One bounded durable operation per invocation; provider adapters are injected."""
 from outreach_recovery.delivery_contracts import MutationResult, MutationState, ReconciliationResult, ReconciliationState
 
 class DeliveryWorker:
