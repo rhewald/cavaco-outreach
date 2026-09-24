@@ -8,6 +8,6 @@
 
 .contact-links{display:flex;flex-direction:column;gap:5px;margin-top:10px;font-size:12px;overflow-wrap:anywhere}.contact-links small{font-size:11px}.contact-links a{font-weight:600}
 
-.brand{background:#fff;border-radius:10px;padding:12px;margin:0 0 36px}.brand img{width:100%;height:auto}@media(max-width:700px){.brand{max-width:210px;margin:0}.brand img{width:100%}}
+.brand{background:transparent;border-radius:0;padding:0;margin:0 0 36px}.brand img{width:100%;height:auto}@media(max-width:700px){.brand{max-width:210px;margin:0}.brand img{width:100%}}
 
 .contact-name-link{color:#2853a6;text-decoration:underline;text-underline-offset:3px}.contact-name-link:hover{color:#142c61}.contact-name-link::after{content:" ↗";font-size:.8em}
