@@ -2,17 +2,19 @@
 import argparse,os,plistlib,shutil,subprocess,sys
 from pathlib import Path
 
-LABELS={'inbox':'ai.cavaco.outreach.inbox','crm':'ai.cavaco.outreach.crm'}
+LABELS={'inbox':'ai.cavaco.outreach.inbox','crm':'ai.cavaco.outreach.crm','delivery':'ai.cavaco.outreach.worker'}
 
 
 def configuration(kind,python,code,logs,mailbox,portal):
     label=LABELS[kind]
-    args=[str(python),'-u','-m','outreach_recovery.'+('inbox_worker' if kind=='inbox' else 'crm_worker'),'--pilot','--watch']
-    args+=['--mailbox',mailbox] if kind=='inbox' else ['--portal',str(portal)]
+    args=[str(python),'-u','-m','outreach_recovery.'+{'inbox':'inbox_worker','crm':'crm_worker','delivery':'dispatch_service'}[kind],'--pilot','--watch']
+    if kind=='inbox': args+=['--mailbox',mailbox]
+    elif kind=='crm': args+=['--portal',str(portal)]
+    else: args+=['--poll-interval','5']
     return {'Label':label,'ProgramArguments':args,'WorkingDirectory':str(code),
             'RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':30,'ProcessType':'Background',
             'ExitTimeOut':15,'Umask':63,
-            'EnvironmentVariables':{'PYTHONUNBUFFERED':'1','PYTHONPATH':str(code)},
+            'EnvironmentVariables':{'PYTHONUNBUFFERED':'1','PYTHONPATH':str(code),**({'OUTREACH_TEST_MODE':'true'} if kind=='delivery' else {})},
             'StandardOutPath':str(logs/(kind+'.log')),'StandardErrorPath':str(logs/(kind+'.error.log'))}
 
 
